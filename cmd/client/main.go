@@ -1,19 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/pvotal-tech/go-uof-sdk"
-	"github.com/pvotal-tech/go-uof-sdk/api"
 	"github.com/pvotal-tech/go-uof-sdk/sdk"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -55,162 +54,102 @@ func main() {
 	}()
 	go debugHTTP()
 
-	//preloadTo := time.Now().Add(1 * time.Hour)
+	//preloadTo := time.Now().Add(24 * time.Hour)
 
-	timestamp := uof.CurrentTimestamp() - 1000 // -5 minutes
-	var ppp uof.ProducersChange
-	ppp.Add(uof.ProducerPrematch, timestamp)
-	//pc.Add(uof.ProducerLiveOdds, timestamp)
-	//pc.Add(uof.ProducerBetPal, timestamp)
-	//pc.Add(uof.ProducerPremiumCricket, timestamp)
+	timestamp := uof.CurrentTimestamp() - 12*60*60*1000 // -5 minutes
+	var pc uof.ProducersChange
+	pc.Add(uof.ProducerPrematch, timestamp)
+	pc.Add(uof.ProducerLiveOdds, timestamp)
+	pc.Add(uof.ProducerBetPal, timestamp)
+	pc.Add(uof.ProducerPremiumCricket, timestamp)
 
 	err := sdk.Run(exitSignal(),
-		sdk.Credentials(38616, "j8l0CpSoytxhp7xb7r", 123456),
+		sdk.Credentials(123456, "token_goes_here", 123),
 		sdk.Staging(),
-		//sdk.Recovery(ppp),
-		sdk.DisablePipeline(),
-		sdk.ConfigThrottle(false, 10),
-		//sdk.ConfigConcurrentAPIFetch(true),
-		sdk.DisableAutoAck(),
+		sdk.Recovery(pc),
+		sdk.ConfigThrottle(true),
 		//sdk.Fixtures(preloadTo),
 		sdk.Languages(uof.Languages("en")),
 		//sdk.BufferedConsumer(pipe.FileStore("./tmp"), 1024),
 		sdk.Consumer(logMessages),
-		sdk.ListenErrors(listenSDKErrors),
+		//sdk.ListenErrors(listenSDKErrors),
 	)
 	if err != nil {
-		fmt.Println("SDK FAILED!!", err.Error())
 		log.Fatal(err)
 	}
-}
-
-func startReplay(rpl *api.ReplayAPI) error {
-	return nil
-	//return rpl.StartEvent(eventURN, speed, maxDelay)
-	//return rpl.StartScenario(scenarioID, speed, maxDelay)
 }
 
 // consumer of incoming messages
 func logMessages(in <-chan *uof.Message) error {
 	for m := range in {
-		err := processMessage(m)
-		if err != nil {
-			fmt.Println("error during message process, nacking and requesting requeue", err.Error())
-
-			if !m.EnabledAutoAck {
-				if err := m.NackRequeue(); err != nil {
-					fmt.Println("error during NackRequeue", err.Error())
-				}
-			}
-			continue
-		}
-		if !m.EnabledAutoAck {
-			if m.Delivery != nil {
-				fmt.Println("Acking", m.Delivery.DeliveryTag)
-			}
-			if err := m.Ack(); err != nil {
-				fmt.Println("error during Ack", err.Error())
-				continue
-			}
-		}
+		processMessage(m)
 	}
 	return nil
 }
 
-var sportMap = make(map[string]string)
-
-var errorCount int
-
-var pc uof.ProducersChange
-
-func processMessage(m *uof.Message) error {
-	time.Sleep(time.Second * 2000)
-	reqID := 0
-	fmt.Printf("%-25s | %-25v | %-25s | %-25d\n", m.Type, m.Delivery != nil, m.EventURN.String(), m.SportID)
-	return nil
+func processMessage(m *uof.Message) {
+	var pendingCount, p, requestID, sport string
+	if m.External {
+		pendingCount = fmt.Sprintf("pending=%d", m.PendingMsgCount)
+		p = fmt.Sprintf("producer=%s", m.Producer.Code())
+		if m.Type == uof.MessageTypeBetSettlement {
+			if m.BetSettlement.RequestID != nil {
+				requestID = fmt.Sprintf("requestID=%d", *m.BetSettlement.RequestID)
+			}
+			sport = fmt.Sprintf("sportID=%d", m.SportID)
+		}
+		if m.Type == uof.MessageTypeOddsChange {
+			if m.OddsChange.RequestID != nil {
+				requestID = fmt.Sprintf("requestID=%d", *m.OddsChange.RequestID)
+			}
+			sport = fmt.Sprintf("sportID=%d", m.SportID)
+		}
+	}
+	fmt.Printf("%-60s %-20s %-20s %-20s %-20s %-20s\n", time.Now().String(), m.Type, pendingCount, p, requestID, sport)
+	time.Sleep(time.Millisecond * 200)
+	return
 	switch m.Type {
 	case uof.MessageTypeConnection:
 		fmt.Printf("%-25s status: %s, server: %s, local: %s, network: %s, tls: %s\n", m.Type, m.Connection.Status, m.Connection.ServerName, m.Connection.LocalAddr, m.Connection.Network, m.Connection.TLSVersionToString())
 	case uof.MessageTypeFixture:
-		//fmt.Printf("%-25s lang: %s, urn: %s raw: %d, timestamps %d\n", m.Type, m.Lang, m.FixtureBytes.URN, len(m.Raw), m.Timestamp)
+		fmt.Printf("%-25s lang: %s, urn: %s raw: %d\n", m.Type, m.Lang, m.Fixture.URN, len(m.Raw))
 	case uof.MessageTypeMarkets:
-		//fmt.Printf("%-25s lang: %s, count: %d\n", m.Type, m.Lang, len(m.Markets))
-	case uof.MessageTypePlayer:
-		//fmt.Printf("%-25s lang: %s, count: %d\n", m.Type, m.Lang, len(m.Markets))
+		fmt.Printf("%-25s lang: %s, count: %d\n", m.Type, m.Lang, len(m.Markets))
 	case uof.MessageTypeAlive:
-		fmt.Printf("%-25s producer: %s, timestamp: %d, subscribed: %d, nodeID: %d\n", m.Type, m.Alive.Producer, m.Alive.Timestamp, m.Alive.Subscribed, m.NodeID)
-	case uof.MessageTypeSnapshotComplete:
-		fmt.Printf("%-25s prod: %s, reqID: %d, nodeID: %d\n", m.Type, m.SnapshotComplete.Producer, m.SnapshotComplete.RequestID, m.NodeID)
-	case uof.MessageTypeProducersChange:
-		statuses := make([]string, len(m.Producers))
-		for i, v := range m.Producers {
-			status := ""
-			switch v.Status {
-			case -1:
-				status = "down"
-			case 1:
-				status = "active"
-			case 2:
-				status = "in-recovery"
-			}
-			statuses[i] = v.Producer.Code() + "=" + status
+		if m.Alive.Subscribed != 0 {
+			fmt.Printf("%-25s producer: %s, timestamp: %d\n", m.Type, m.Alive.Producer, m.Alive.Timestamp)
 		}
-		fmt.Printf("%-25s producers: %s \n", m.Type, strings.Join(statuses, "|"))
 	case uof.MessageTypeBetSettlement:
-		//if !validEventURN(m.BetSettlement.EventURN) { return nil }
-		if validRequestID(m.BetSettlement.RequestID) {
-			reqID = *m.BetSettlement.RequestID
-		} //return nil }
-		fmt.Println(m.Type, m.Delivery.DeliveryTag, m.NodeID, reqID)
-		//logObject(*m.BetSettlement)
-	case uof.MessageTypeRollbackBetSettlement:
-		//if !validEventURN(m.RollbackBetSettlement.EventURN) { return nil }
-		if validRequestID(m.RollbackBetSettlement.RequestID) {
-			reqID = *m.RollbackBetSettlement.RequestID
-		} //return nil }
-		fmt.Println(m.Type, m.Delivery.DeliveryTag, m.NodeID, reqID)
-		//logObject(*m.RollbackBetSettlement)
+		for _, v := range m.BetSettlement.Markets {
+			fmt.Printf("BET SETTLEMENT producer=%v eventID=%d marketID=%v status=%v\n", m.Producer, m.BetSettlement.EventURN.ID(), v.ID, v.Result)
+		}
 	case uof.MessageTypeBetStop:
-		//if !validEventURN(m.BetStop.EventURN) { return nil }
-		if validRequestID(m.BetStop.RequestID) {
-			reqID = *m.BetStop.RequestID
-		} //return nil }
-		fmt.Println(m.Type, m.Delivery.DeliveryTag, m.NodeID, reqID)
-		//logObject(*m.BetStop)
-	case uof.MessageTypeBetCancel:
-		//if !validEventURN(m.BetCancel.EventURN) { return nil }
-		if validRequestID(m.BetCancel.RequestID) {
-			reqID = *m.BetCancel.RequestID
-		} //return nil }
-		fmt.Println(m.Type, m.Delivery.DeliveryTag, m.NodeID, reqID)
-		//logObject(*m.BetCancel)
-	case uof.MessageTypeRollbackBetCancel:
-		//if !validEventURN(m.RollbackBetCancel.EventURN) { return nil }
-		if validRequestID(m.RollbackBetCancel.RequestID) {
-			reqID = *m.RollbackBetCancel.RequestID
-		} //return nil }
-		fmt.Println(m.Type, m.Delivery.DeliveryTag, m.NodeID, reqID)
-		//logObject(*m.RollbackBetCancel)
+		for _, v := range m.BetStop.MarketIDs {
+			fmt.Printf("BET STOP producer=%v eventID=%d marketID=%v status=%v\n", m.Producer, m.BetStop.EventURN.ID(), v, m.BetStop.Status)
+		}
 	case uof.MessageTypeOddsChange:
-		//if !validEventURN(m.OddsChange.EventURN) { return nil }
-		if validRequestID(m.OddsChange.RequestID) {
-			reqID = *m.OddsChange.RequestID
-		} //return nil }
-		fmt.Println(m.Type, m.Delivery.DeliveryTag, m.NodeID, reqID)
-		//logObject(*m.OddsChange)
+		fmt.Printf("ODDS CHANGE producer=%v eventID=%d eventStatus=%v\n", m.Producer, m.OddsChange.EventURN.ID(), m.OddsChange.EventStatus)
+		for _, v := range m.OddsChange.Markets {
+			fmt.Printf("ODDS CHANGE producer=%v eventID=%d marketID=%v status=%v\n", m.Producer, m.OddsChange.EventURN.ID(), v.ID, v.Status)
+		}
+	default:
+		var b []byte
+		if false && m.Raw != nil {
+			b = m.Raw
+			// remove xml header
+			if i := bytes.Index(b, []byte("?>")); i > 0 {
+				b = b[i+2:]
+			}
+		} else {
+			b, _ = json.Marshal(m.Body)
+		}
+		// show just first x characters
+		x := 186
+		if len(b) > x {
+			b = b[:x]
+		}
+		fmt.Printf("%-25s %s\n", m.Type, b)
 	}
-	return nil
-}
-
-func validRequestID(requestID *int) bool {
-	if requestID == nil {
-		return false
-	}
-	return true //*requestID == 999999
-}
-
-func validEventURN(urn uof.URN) bool {
-	return urn.ID() == 41763059
 }
 
 // listenSDKErrors listens all SDK errors for logging or any other pourpose
@@ -252,21 +191,4 @@ func listenSDKErrors(err error) {
 		// any other error not uof.Error
 		log.Println(err)
 	}
-}
-
-func logObject(obj interface{}) {
-	bytes, err := json.MarshalIndent(obj, "", " ")
-	if err != nil {
-		fmt.Println("ERROR WHILE UNMARSHALLING")
-	}
-	fmt.Println(string(bytes))
-}
-
-func getProducerChange(producers uof.ProducersChange, producer uof.Producer) (*uof.ProducerChange, error) {
-	for _, p := range producers {
-		if p.Producer.Code() == producer.Code() {
-			return &p, nil
-		}
-	}
-	return nil, fmt.Errorf("invalid producer: %s (forgot to do recovery?)", producer.Code())
 }

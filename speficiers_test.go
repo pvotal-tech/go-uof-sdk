@@ -1,17 +1,13 @@
 package uof
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestParseNameWithSpecifiers(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	players := NewMapCache[int, Player](ctx, time.Hour, time.Hour)
-	players.Set(1234, Player{FullName: "John Rodriquez"})
+	players := map[int]Player{1234: {FullName: "John Rodriquez"}}
 	fixture := Fixture{
 		Name: "Euro2016",
 		Competitors: []Competitor{
@@ -147,5 +143,4 @@ func TestParseNameWithSpecifiers(t *testing.T) {
 			assert.Equal(t, tc.expected, actual)
 		})
 	}
-	cancel()
 }

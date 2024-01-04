@@ -67,7 +67,7 @@ func main() {
 		sdk.Credentials(123456, "token_goes_here", 123),
 		sdk.Staging(),
 		sdk.Recovery(pc),
-		sdk.ConfigThrottle(true),
+		sdk.ConfigThrottle(true, 0),
 		//sdk.Fixtures(preloadTo),
 		sdk.Languages(uof.Languages("en")),
 		//sdk.BufferedConsumer(pipe.FileStore("./tmp"), 1024),
@@ -89,7 +89,7 @@ func logMessages(in <-chan *uof.Message) error {
 
 func processMessage(m *uof.Message) {
 	var pendingCount, p, requestID, sport string
-	if m.External {
+	if m.Delivery != nil {
 		pendingCount = fmt.Sprintf("pending=%d", m.PendingMsgCount)
 		p = fmt.Sprintf("producer=%s", m.Producer.Code())
 		if m.Type == uof.MessageTypeBetSettlement {

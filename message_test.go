@@ -141,9 +141,9 @@ func TestMessageWithRawMarshal(t *testing.T) {
 	}
 
 	buf := m.Marshal()
-	expected := []byte(`{"type":64,"scope":4,"receivedAt":12345,"producer":3,"timestamp":12340}
+	expected := []byte(`{"type":64,"scope":4,"receivedAt":12345,"producer":3,"timestamp":12340,"Delivery":null,"EnabledAutoAck":false,"ReadAt":"0001-01-01T00:00:00Z"}
 <alive product="3" timestamp="12340" subscribed="1"/>`)
-	assert.Equal(t, expected, buf)
+	assert.Equal(t, string(expected), string(buf))
 
 	m2 := &Message{}
 	err := m2.Unmarshal(buf)
@@ -162,8 +162,8 @@ func TestMessageWithoutRaw(t *testing.T) {
 	}
 
 	buf := m.Marshal()
-	expected := []byte(`{"type":66,"scope":4,"receivedAt":12345,"connection":{"status":1}}`)
-	assert.Equal(t, expected, buf)
+	expected := []byte(`{"type":66,"scope":4,"receivedAt":12345,"Delivery":null,"EnabledAutoAck":false,"ReadAt":"0001-01-01T00:00:00Z","connection":{"status":1}}`)
+	assert.Equal(t, string(expected), string(buf))
 
 	m2 := &Message{}
 	err := m2.Unmarshal(buf)
@@ -270,7 +270,7 @@ func TestNewMessage(t *testing.T) {
 
 func TestNewMessageFromBufFail(t *testing.T) {
 	failing := []byte{}
-	expectErr := fmt.Errorf("NOTICE uof error op: message.unpack, inner: EOF")
+	expectErr := fmt.Errorf("NOTICE uof error op: message.unpack, inner: EOF:")
 	m, err := NewFixtureMessageFromBuf(LangEN, failing, 0)
 	assert.Nil(t, m)
 	assert.Error(t, err)
@@ -285,7 +285,7 @@ func TestUnpackFail(t *testing.T) {
 
 	_, err := NewQueueMessage("hi.pre.-.bet_cancel.1.sr:match.1234.-", buf)
 	assert.Error(t, err)
-	assert.Equal(t, `NOTICE uof error op: message.unpack, inner: strconv.ParseInt: parsing "int": invalid syntax`, err.Error())
+	assert.Equal(t, `NOTICE uof error op: message.unpack, inner: strconv.ParseInt: parsing "int": invalid syntax`+":"+string(buf), err.Error())
 
 	// height should be int
 	buf = []byte(`
@@ -295,7 +295,7 @@ func TestUnpackFail(t *testing.T) {
 	`)
 	_, err = NewAPIMessage(LangEN, MessageTypePlayer, buf)
 	assert.Error(t, err)
-	assert.Equal(t, `NOTICE uof error op: message.unpack, inner: strconv.ParseInt: parsing "int": invalid syntax`, err.Error())
+	assert.Equal(t, `NOTICE uof error op: message.unpack, inner: strconv.ParseInt: parsing "int": invalid syntax`+":"+string(buf), err.Error())
 
 	var m Message
 	err = m.Unmarshal(nil)

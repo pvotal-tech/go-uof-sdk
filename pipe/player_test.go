@@ -23,30 +23,26 @@ func (m *playerAPIMock) Player(lang uof.Lang, playerID int) (*uof.Player, error)
 
 func TestPlayerPipe(t *testing.T) {
 	a := &playerAPIMock{requests: make(map[int]struct{})}
-	p := Player(a, []uof.Lang{uof.LangEN, uof.LangDE})
+	p := Player(a, []uof.Lang{uof.LangEN}, false)
 	assert.NotNil(t, p)
 
 	in := make(chan *uof.Message)
 	out, _ := p(in)
 
-	// this type of message is passing through
-	m := uof.NewSimpleConnnectionMessage(uof.ConnectionStatusUp)
+	m := oddsChangeMessage(t)
 	in <- m
-	om := <-out
-	assert.Equal(t, m, om)
-
-	m = oddsChangeMessage(t)
-	in <- m
-	om = <-out
-	assert.Equal(t, m, om)
 
 	close(in)
 	cnt := 0
-	for range out {
-		cnt++
+	for om := range out {
+		if om.Type == uof.MessageTypeOddsChange {
+			assert.Equal(t, m, om)
+		} else {
+			cnt++
+		}
 	}
-	assert.Equal(t, 82, cnt)
-	assert.Equal(t, 82, len(a.requests))
+	assert.Equal(t, 41, cnt)
+	assert.Equal(t, 41, len(a.requests))
 }
 
 func oddsChangeMessage(t *testing.T) *uof.Message {

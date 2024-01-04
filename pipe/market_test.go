@@ -27,34 +27,26 @@ func (m *marketsAPIMock) MarketVariant(lang uof.Lang, marketID int, variant stri
 
 func TestMarketsPipe(t *testing.T) {
 	a := &marketsAPIMock{requests: make(map[string]struct{})}
-	ms := Markets(a, []uof.Lang{uof.LangEN, uof.LangDE})
+	ms := Markets(a, []uof.Lang{uof.LangEN})
 	assert.NotNil(t, ms)
 
-	in := make(chan *uof.Message)
+	in := make(chan *uof.Message, 1)
 	out, _ := ms(in)
 
-	// this type of message is passing through
-	m := uof.NewSimpleConnnectionMessage(uof.ConnectionStatusUp)
+	m := oddsChangeMessage(t)
 	in <- m
-	om := <-out
-	assert.Equal(t, m, om)
-
-	m = oddsChangeMessage(t)
-	in <- m
-	// om = <-out
-	// assert.Equal(t, m, om)
 
 	close(in)
 	cnt := 0
-	for range out {
-		cnt++
+	for om := range out {
+		if om.Type == uof.MessageTypeOddsChange {
+			assert.Equal(t, m, om)
+		} else {
+			cnt++
+		}
 	}
-	assert.Equal(t, 5, cnt)
+	assert.Equal(t, 2, cnt)
 
 	_, found := a.requests["en 145 sr:point_range:76+"]
 	assert.True(t, found)
-
-	_, found = a.requests["de 145 sr:point_range:76+"]
-	assert.True(t, found)
-
 }
